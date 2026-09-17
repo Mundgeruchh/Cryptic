@@ -6,5 +6,5 @@ compatibility_date = "2026-08-10"
 # (Workers & Pages → KV → deine Namespace ID kopieren)
 [[kv_namespaces]]
 binding = "SCRIPTS_KV"
-id = "bb9ebc15f08945e093d0fd482a0979ea"
+id = "0878b68840484ebd89332f9281fd0159"
 
