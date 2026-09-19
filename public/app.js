@@ -5,8 +5,28 @@ let editingId = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEditorListeners();
+  setupStaticListeners();
   initGoogleAuth();
 });
+
+function setupStaticListeners() {
+  document.getElementById('logout-btn').addEventListener('click', handleLogout);
+  document.getElementById('clear-btn').addEventListener('click', clearEditor);
+  document.getElementById('refresh-btn').addEventListener('click', loadScriptList);
+  document.getElementById('search-input').addEventListener('input', filterScripts);
+  document.getElementById('upload-form').addEventListener('submit', handleUpload);
+
+  document.getElementById('script-list-container').addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-action]');
+    if (!btn) return;
+    const { action, id } = btn.dataset;
+    if (action === 'copy') copyLoadstring(id);
+    else if (action === 'edit') editScript(id);
+    else if (action === 'toggle') toggleScript(id);
+    else if (action === 'rotate') rotateScript(id);
+    else if (action === 'delete') deleteScript(id);
+  });
+}
 
 // auth
 
@@ -277,11 +297,11 @@ function renderScriptList(scripts) {
       </div>
       <div class="script-card-status ${disabled ? 'status-off' : 'status-on'}">${disabled ? 'Disabled' : 'Active'}</div>
       <div class="script-card-actions">
-        <button class="btn btn-primary btn-sm" onclick="copyLoadstring('${script.scriptId}')">⚡ Copy Loadstring</button>
-        <button class="btn btn-secondary btn-sm" onclick="editScript('${script.scriptId}')">✏️ Edit</button>
-        <button class="btn btn-secondary btn-sm" onclick="toggleScript('${script.scriptId}')">${disabled ? '▶️ Enable' : '⏸️ Disable'}</button>
-        <button class="btn btn-secondary btn-sm" onclick="rotateScript('${script.scriptId}')">🔄 Rotate link</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteScript('${script.scriptId}')">🗑️ Delete</button>
+        <button class="btn btn-primary btn-sm" data-action="copy" data-id="${script.scriptId}">⚡ Copy Loadstring</button>
+        <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${script.scriptId}">✏️ Edit</button>
+        <button class="btn btn-secondary btn-sm" data-action="toggle" data-id="${script.scriptId}">${disabled ? '▶️ Enable' : '⏸️ Disable'}</button>
+        <button class="btn btn-secondary btn-sm" data-action="rotate" data-id="${script.scriptId}">🔄 Rotate link</button>
+        <button class="btn btn-danger btn-sm" data-action="delete" data-id="${script.scriptId}">🗑️ Delete</button>
       </div>
     </div>
   `;
