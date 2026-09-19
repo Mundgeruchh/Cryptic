@@ -1,11 +1,20 @@
 // google sign-in login — verifies the google id token and checks it against ADMIN_MAIL
 
 import { createSession, parseAllowedEmails } from './_lib/session.js';
+import { isRateLimited, tooManyRequests, clientIp } from './_lib/ratelimit.js';
+import { logEvent } from './_lib/log.js';
 
 export async function onRequestPost(context) {
   try {
     const { request, env } = context;
-    const { credential } = await request.json();
+    const ip = clientIp(request);
+
+    if (env.SCRIPTS_KV && await isRateLimited(env.SCRIPTS_KV, `login:${ip}`, 10, 60)) {
+      await logEvent(env.SCRIPTS_KV, 'login_rate_limited', { ip });
+      return tooManyRequests();
+    }
+
+    const { credential } = await request.json().catch(() => ({}));
 
     if (!credential) {
       return new Response(JSON.stringify({ success: false, error: 'No Google token received' }), {
@@ -54,6 +63,7 @@ export async function onRequestPost(context) {
     const allowed = parseAllowedEmails(env.ADMIN_MAIL);
 
     if (!allowed.includes(email)) {
+      await logEvent(env.SCRIPTS_KV, 'login_denied', { ip, email });
       return new Response(JSON.stringify({ success: false, error: 'This Google account has no access' }), {
         status: 403,
         headers: { 'content-type': 'application/json' }
@@ -61,13 +71,16 @@ export async function onRequestPost(context) {
     }
 
     const token = await createSession(email, env.SESSION_SECRET);
+    await logEvent(env.SCRIPTS_KV, 'login_success', { ip, email });
 
     return new Response(JSON.stringify({ success: true, token, email }), {
       status: 200,
       headers: { 'content-type': 'application/json' }
     });
   } catch (err) {
-    return new Response(JSON.stringify({ success: false, error: err.message }), { status: 400,
+    console.error('[login]', err);
+    return new Response(JSON.stringify({ success: false, error: 'Invalid request' }), {
+      status: 400,
       headers: { 'content-type': 'application/json' }
     });
   }
