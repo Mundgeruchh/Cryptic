@@ -1,0 +1,10 @@
+name = "cryptic-scripts-website"
+pages_build_output_dir = "./public"
+compatibility_date = "2026-08-10"
+
+# KV Namespace Binding — ersetze die ID mit deiner echten Namespace ID aus dem Dashboard
+# (Workers & Pages → KV → deine Namespace ID kopieren)
+[[kv_namespaces]]
+binding = "SCRIPTS_KV"
+id = "0878b68840484ebd89332f9281fd0159"
+

@@ -1,0 +1,24 @@
+{
+  "name": "cryptic-scripts-website",
+  "version": "2.0.0",
+  "description": "Cryptic Script Hub — Pastebin & Roblox loadstring hosting with Google login and execution stats on Cloudflare Pages",
+  "main": "public/index.html",
+  "scripts": {
+    "build": "echo 'No build command needed for Cloudflare Pages'",
+    "deploy": "echo 'Deploy handled automatically by Cloudflare Pages Git connection'",
+    "dev": "npx wrangler pages dev public"
+  },
+  "keywords": [
+    "pastebin",
+    "roblox",
+    "loadstring",
+    "cloudflare-pages",
+    "github-api",
+    "lua"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^4.120.1"
+  }
+}

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cryptic — Script Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+  <div class="bg-glow"></div>
+
+  <div id="auth-modal" class="modal-overlay">
+    <div class="auth-card">
+      <div class="brand-mark">
+        <span class="brand-glyph">◈</span>
+        <span class="brand-name">Cryptic</span>
+      </div>
+
+      <div class="auth-header">
+        <h2>Sign in</h2>
+        <p>Only approved Google accounts have access to this dashboard.</p>
+      </div>
+
+      <div id="google-btn-container" class="google-btn-container"></div>
+
+      <div id="auth-config-warning" class="error-banner hidden">
+        Server isn't configured yet. Set <code>GOOGLE_CLIENT_ID</code>, <code>ADMIN_MAIL</code> and <code>SESSION_SECRET</code> in Cloudflare.
+      </div>
+
+      <div id="auth-error" class="error-banner hidden"></div>
+    </div>
+  </div>
+
+  <div id="app" class="app-container hidden">
+
+    <header class="navbar">
+      <div class="nav-brand">
+        <span class="brand-glyph">◈</span>
+        <h1>Cryptic</h1>
+      </div>
+      <div class="nav-actions">
+        <span id="nav-email" class="nav-email"></span>
+        <button class="btn btn-secondary btn-sm" onclick="handleLogout()">Sign out</button>
+      </div>
+    </header>
+
+    <section class="stats-row" id="stats-row">
+      <div class="stat-card fade-in" style="--delay:0s">
+        <span class="stat-value" id="stat-scripts">0</span>
+        <span class="stat-label">Scripts</span>
+      </div>
+      <div class="stat-card fade-in" style="--delay:0.05s">
+        <span class="stat-value" id="stat-runs">0</span>
+        <span class="stat-label">Total executions</span>
+      </div>
+      <div class="stat-card fade-in" style="--delay:0.1s">
+        <span class="stat-value" id="stat-top">–</span>
+        <span class="stat-label">Most used script</span>
+      </div>
+    </section>
+
+    <main class="dashboard-layout">
+
+      <section class="card fade-in" style="--delay:0.15s">
+        <div class="card-header">
+          <h2 id="editor-title">Create new script</h2>
+          <div class="card-header-actions">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="insertProtectionSnippet()">🛡️ Insert protection snippet</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="clearEditor()">Clear</button>
+          </div>
+        </div>
+
+        <form id="upload-form" onsubmit="handleUpload(event)">
+          <div class="form-group">
+            <label for="script-filename">Filename</label>
+            <input type="text" id="script-filename" placeholder="e.g. fly.lua" required pattern="^[a-zA-Z0-9_\-\.]+$">
+          </div>
+
+          <div class="form-group">
+            <label for="script-content">Lua code</label>
+            <div class="code-editor-container">
+              <div class="line-numbers" id="line-numbers">1</div>
+              <textarea id="script-content" placeholder="-- Paste your Lua code here..." required spellcheck="false"></textarea>
+            </div>
+          </div>
+
+          <button type="submit" id="upload-btn" class="btn btn-primary btn-full">
+            <span>Upload / Save Script</span>
+          </button>
+        </form>
+      </section>
+
+      <section class="card fade-in" style="--delay:0.2s">
+        <div class="card-header">
+          <h2>Uploaded scripts</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadScriptList()">↻ Refresh</button>
+        </div>
+
+        <div class="form-group">
+          <input type="text" id="search-input" placeholder="Search scripts..." oninput="filterScripts()">
+        </div>
+
+        <div id="script-list-container" class="script-grid">
+          <div class="loading-state"><div class="spinner"></div><p>Loading scripts...</p></div>
+        </div>
+      </section>
+
+      <section class="card fade-in security-card" style="--delay:0.25s">
+        <div class="card-header">
+          <h2>🔒 Security notes</h2>
+        </div>
+        <ul class="security-list">
+          <li><strong>Access:</strong> only emails listed in <code>ADMIN_MAIL</code> can sign in — login runs through Google, there's no password anymore.</li>
+          <li><strong>Source protection is limited:</strong> a Lua script loaded via <code>loadstring</code> in an executor has to arrive on the client to run at all. Any executor can, in principle, capture the code it runs — there's no 100% protection.</li>
+          <li><strong>What actually helps:</strong> obfuscation (e.g. Luraph/Moonsec), the "protection snippet" above (detects known debug/dump functions and bails out), and short-lived session links instead of fixed filenames.</li>
+          <li><strong>What does NOT exist:</strong> a trick that allows execution but makes reading completely impossible. Detection snippets are, at best, a hurdle — not a guarantee — and can be bypassed.</li>
+        </ul>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
