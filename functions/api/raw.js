@@ -1,11 +1,19 @@
 // raw script server — returns plain text only, never HTML
 
+// Cloudflare's free KV tier caps writes at 1000/day. Counting every single
+// loadstring fetch burned through that quota on busy days and then blocked
+// unrelated writes site-wide, including saving edits from the dashboard.
+// Sample instead: only write on 1 in COUNT_SAMPLE_RATE hits, and credit the
+// counter for the whole batch when it does.
+const COUNT_SAMPLE_RATE = 20;
+
 async function bumpCounter(kv, filename) {
+  if (Math.random() >= 1 / COUNT_SAMPLE_RATE) return;
   try {
     const keys = [`__count__:${filename}`, '__count__:__total__'];
     for (const key of keys) {
       const current = parseInt((await kv.get(key)) || '0', 10) || 0;
-      await kv.put(key, String(current + 1));
+      await kv.put(key, String(current + COUNT_SAMPLE_RATE));
     }
   } catch (e) {
     // counting is best-effort, never block script delivery over it
