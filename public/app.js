@@ -245,10 +245,12 @@ async function handleUpload(event) {
       handleLogout();
       return;
     } else {
-      showToast(`Script "${filename}" saved!`, 'success');
+      showToast(`Failed to save "${filename}": ${data.error || res.statusText}`, 'error');
+      return;
     }
   } catch (e) {
-    showToast(`Script "${filename}" saved!`, 'success');
+    showToast(`Failed to save "${filename}": ${e.message}`, 'error');
+    return;
   }
 
   clearEditor();
