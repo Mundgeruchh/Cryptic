@@ -456,32 +456,6 @@ textarea#script-content {
   flex-wrap: wrap;
 }
 
-.script-card.disabled {
-  opacity: 0.55;
-}
-
-.script-card-status {
-  font-size: 0.72rem;
-  font-family: var(--mono);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  width: fit-content;
-  padding: 0.1rem 0.5rem;
-  border-radius: 999px;
-}
-
-.script-card-status.status-on {
-  color: #4ade80;
-  background: rgba(74, 222, 128, 0.1);
-  border: 1px solid rgba(74, 222, 128, 0.25);
-}
-
-.script-card-status.status-off {
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.1);
-  border: 1px solid rgba(248, 113, 113, 0.25);
-}
-
 .empty-state {
   color: var(--muted);
   font-size: 0.9rem;

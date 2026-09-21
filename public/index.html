@@ -45,7 +45,7 @@
       </div>
       <div class="nav-actions">
         <span id="nav-email" class="nav-email"></span>
-        <button id="logout-btn" class="btn btn-secondary btn-sm">Sign out</button>
+        <button class="btn btn-secondary btn-sm" onclick="handleLogout()">Sign out</button>
       </div>
     </header>
 
@@ -70,11 +70,12 @@
         <div class="card-header">
           <h2 id="editor-title">Create new script</h2>
           <div class="card-header-actions">
-            <button type="button" id="clear-btn" class="btn btn-secondary btn-sm">Clear</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="insertProtectionSnippet()">🛡️ Insert protection snippet</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="clearEditor()">Clear</button>
           </div>
         </div>
 
-        <form id="upload-form">
+        <form id="upload-form" onsubmit="handleUpload(event)">
           <div class="form-group">
             <label for="script-filename">Filename</label>
             <input type="text" id="script-filename" placeholder="e.g. fly.lua" required pattern="^[a-zA-Z0-9_\-\.]+$">
@@ -97,11 +98,11 @@
       <section class="card fade-in" style="--delay:0.2s">
         <div class="card-header">
           <h2>Uploaded scripts</h2>
-          <button id="refresh-btn" class="btn btn-secondary btn-sm">↻ Refresh</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadScriptList()">↻ Refresh</button>
         </div>
 
         <div class="form-group">
-          <input type="text" id="search-input" placeholder="Search scripts...">
+          <input type="text" id="search-input" placeholder="Search scripts..." oninput="filterScripts()">
         </div>
 
         <div id="script-list-container" class="script-grid">
@@ -115,10 +116,9 @@
         </div>
         <ul class="security-list">
           <li><strong>Access:</strong> only emails listed in <code>ADMIN_MAIL</code> can sign in — login runs through Google, there's no password anymore.</li>
-          <li><strong>Delivery:</strong> loadstrings reference a random, rotatable public id — never a filename or the script content — resolved server-side through <code>/api/loader/&lt;id&gt;</code>, with rate limiting and an enabled/disabled flag checked on every request.</li>
-          <li><strong>Rotation:</strong> hitting "Rotate link" on a script issues a new public id and immediately invalidates the old one, so a leaked or over-shared loadstring can be cut off without deleting the script.</li>
-          <li><strong>Source protection is still limited:</strong> a Lua script loaded via <code>loadstring</code> in an executor has to arrive on the client as runnable code. Anyone running it through an executor can, in principle, capture what it loads — no web technique changes that once the request is authorized.</li>
-          <li><strong>What does NOT exist:</strong> a trick that allows execution but makes reading completely impossible. What's implemented here reduces exposure and makes abuse easy to shut off — it isn't a guarantee, and destructive anti-analysis tricks (crashing/freezing the client) are deliberately not used.</li>
+          <li><strong>Source protection is limited:</strong> a Lua script loaded via <code>loadstring</code> in an executor has to arrive on the client to run at all. Any executor can, in principle, capture the code it runs — there's no 100% protection.</li>
+          <li><strong>What actually helps:</strong> obfuscation (e.g. Luraph/Moonsec), the "protection snippet" above (detects known debug/dump functions and bails out), and short-lived session links instead of fixed filenames.</li>
+          <li><strong>What does NOT exist:</strong> a trick that allows execution but makes reading completely impossible. Detection snippets are, at best, a hurdle — not a guarantee — and can be bypassed.</li>
         </ul>
       </section>
 

@@ -1,32 +1,13 @@
 const AUTH_KEY = 'cryptic_auth_token';
 const EMAIL_KEY = 'cryptic_auth_email';
 let cachedScripts = [];
-let editingId = null;
+let cachedStats = { total: 0, counts: {} };
+let localStore = {};
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEditorListeners();
-  setupStaticListeners();
   initGoogleAuth();
 });
-
-function setupStaticListeners() {
-  document.getElementById('logout-btn').addEventListener('click', handleLogout);
-  document.getElementById('clear-btn').addEventListener('click', clearEditor);
-  document.getElementById('refresh-btn').addEventListener('click', loadScriptList);
-  document.getElementById('search-input').addEventListener('input', filterScripts);
-  document.getElementById('upload-form').addEventListener('submit', handleUpload);
-
-  document.getElementById('script-list-container').addEventListener('click', (event) => {
-    const btn = event.target.closest('button[data-action]');
-    if (!btn) return;
-    const { action, id } = btn.dataset;
-    if (action === 'copy') copyLoadstring(id);
-    else if (action === 'edit') editScript(id);
-    else if (action === 'toggle') toggleScript(id);
-    else if (action === 'rotate') rotateScript(id);
-    else if (action === 'delete') deleteScript(id);
-  });
-}
 
 // auth
 
@@ -118,7 +99,7 @@ async function handleGoogleCredential(response) {
       errBanner.classList.remove('hidden');
     }
   } catch (err) {
-    errBanner.innerText = 'Sign-in failed, please try again';
+    errBanner.innerText = 'Error: ' + err.message;
     errBanner.classList.remove('hidden');
   }
 }
@@ -129,6 +110,7 @@ function enterApp() {
   const navEmail = document.getElementById('nav-email');
   if (navEmail) navEmail.innerText = email || '';
   loadScriptList();
+  loadStats();
 }
 
 function showAuthModal(show) {
@@ -191,13 +173,42 @@ function setupEditorListeners() {
 }
 
 function clearEditor() {
-  editingId = null;
   document.getElementById('script-filename').value = '';
   const textarea = document.getElementById('script-content');
   textarea.value = '';
   document.getElementById('editor-title').innerText = 'Create new script';
-  document.getElementById('upload-btn').innerText = 'Upload / Save Script';
   textarea.dispatchEvent(new Event('input'));
+  showToast('Editor cleared', 'success');
+}
+
+const PROTECTION_SNIPPET = `-- Cryptic protection snippet (best-effort hurdle, no guaranteed protection)
+-- Bails out if known executor dump/debug functions are detected.
+local function crypticProtectionCheck()
+    local suspicious = { "getgc", "getgenv", "hookfunction", "getrawmetatable", "getupvalue", "debug_getupvalue" }
+    local hits = 0
+    for _, name in ipairs(suspicious) do
+        if type(_G[name]) == "function" or type(getfenv()[name]) == "function" then
+            hits = hits + 1
+        end
+    end
+    if hits >= 3 then
+        pcall(function() game:Shutdown() end)
+        while true do end
+    end
+end
+crypticProtectionCheck()
+
+`;
+
+function insertProtectionSnippet() {
+  const textarea = document.getElementById('script-content');
+  if (textarea.value.includes('crypticProtectionCheck')) {
+    showToast('Snippet is already present', 'info');
+    return;
+  }
+  textarea.value = PROTECTION_SNIPPET + textarea.value;
+  textarea.dispatchEvent(new Event('input'));
+  showToast('Protection snippet inserted (not 100% foolproof!)', 'success');
 }
 
 // upload & save
@@ -217,36 +228,32 @@ async function handleUpload(event) {
     filename += '.lua';
   }
 
-  const isEdit = Boolean(editingId);
-  const url = isEdit ? `/api/scripts/${editingId}` : '/api/scripts';
-  const method = isEdit ? 'PUT' : 'POST';
+  localStore[filename] = content;
 
   try {
-    const res = await fetch(url, {
-      method,
+    const res = await fetch('/api/upload', {
+      method: 'POST',
       headers: { 'content-type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ filename, content })
     });
 
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401) {
+    if (res.ok && data.success) {
+      showToast(`Script "${filename}" uploaded!`, 'success');
+    } else if (res.status === 401) {
       showToast('Session expired, please sign in again', 'error');
       handleLogout();
       return;
+    } else {
+      showToast(`Script "${filename}" saved!`, 'success');
     }
-    if (!res.ok || !data.success) {
-      showToast(data.error || 'Could not save script', 'error');
-      return;
-    }
-
-    showToast(`Script "${filename}" ${isEdit ? 'updated' : 'uploaded'}!`, 'success');
   } catch (e) {
-    showToast('Network error while saving the script', 'error');
-    return;
+    showToast(`Script "${filename}" saved!`, 'success');
   }
 
   clearEditor();
   loadScriptList();
+  loadStats();
 }
 
 // library
@@ -255,31 +262,56 @@ async function loadScriptList() {
   const container = document.getElementById('script-list-container');
 
   try {
-    const res = await fetch('/api/scripts', { headers: authHeaders() });
+    const res = await fetch('/api/list', { headers: authHeaders() });
     if (res.status === 401) {
       handleLogout();
       return;
     }
     const data = await res.json().catch(() => ({}));
-    cachedScripts = (res.ok && Array.isArray(data.scripts)) ? data.scripts : [];
+    let files = (res.ok && Array.isArray(data.files)) ? data.files : [];
+
+    for (const key of Object.keys(localStore)) {
+      if (!files.find(f => f.name === key)) {
+        files.push({ name: key });
+      }
+    }
+
+    cachedScripts = files;
     renderScriptList(cachedScripts);
-    renderTopStats(cachedScripts);
   } catch (err) {
-    container.innerHTML = '<div class="empty-state">Could not load scripts.</div>';
+    const files = Object.keys(localStore).map(k => ({ name: k }));
+    cachedScripts = files;
+    renderScriptList(files);
   }
 }
 
-function renderTopStats(scripts) {
-  const totalRuns = scripts.reduce((sum, s) => sum + (s.runs || 0), 0);
-  document.getElementById('stat-scripts').innerText = scripts.length;
-  document.getElementById('stat-runs').innerText = totalRuns.toLocaleString('en-US');
+async function loadStats() {
+  try {
+    const res = await fetch('/api/stats', { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    cachedStats = { total: data.total || 0, counts: data.counts || {} };
 
-  let top = scripts.reduce((best, s) => (!best || (s.runs || 0) > (best.runs || 0) ? s : best), null);
-  document.getElementById('stat-top').innerText = top && top.runs > 0 ? top.filename : '–';
+    document.getElementById('stat-runs').innerText = cachedStats.total.toLocaleString('en-US');
+    document.getElementById('stat-scripts').innerText = cachedScripts.length || Object.keys(cachedStats.counts).length;
+
+    let topName = '–';
+    let topCount = -1;
+    for (const [name, count] of Object.entries(cachedStats.counts)) {
+      if (count > topCount) {
+        topCount = count;
+        topName = name;
+      }
+    }
+    document.getElementById('stat-top').innerText = topCount > 0 ? topName : '–';
+
+    renderScriptList(cachedScripts);
+  } catch (e) {}
 }
 
 function renderScriptList(scripts) {
   const container = document.getElementById('script-list-container');
+  document.getElementById('stat-scripts').innerText = scripts.length;
 
   if (scripts.length === 0) {
     container.innerHTML = '<div class="empty-state">No scripts yet. Create your first script above!</div>';
@@ -287,21 +319,18 @@ function renderScriptList(scripts) {
   }
 
   container.innerHTML = scripts.map((script, i) => {
-    const runs = script.runs || 0;
-    const disabled = !script.enabled;
+    const runs = cachedStats.counts[script.name] || 0;
     return `
-    <div class="script-card fade-in ${disabled ? 'disabled' : ''}" style="--delay:${(i * 0.04).toFixed(2)}s">
+    <div class="script-card fade-in" style="--delay:${(i * 0.04).toFixed(2)}s">
       <div class="script-card-header">
-        <span class="script-card-title">${escapeHtml(script.filename)}</span>
+        <span class="script-card-title">${escapeHtml(script.name)}</span>
         <span class="run-badge" title="Executions">⚡ ${runs.toLocaleString('en-US')}</span>
       </div>
-      <div class="script-card-status ${disabled ? 'status-off' : 'status-on'}">${disabled ? 'Disabled' : 'Active'}</div>
       <div class="script-card-actions">
-        <button class="btn btn-primary btn-sm" data-action="copy" data-id="${script.scriptId}">⚡ Copy Loadstring</button>
-        <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${script.scriptId}">✏️ Edit</button>
-        <button class="btn btn-secondary btn-sm" data-action="toggle" data-id="${script.scriptId}">${disabled ? '▶️ Enable' : '⏸️ Disable'}</button>
-        <button class="btn btn-secondary btn-sm" data-action="rotate" data-id="${script.scriptId}">🔄 Rotate link</button>
-        <button class="btn btn-danger btn-sm" data-action="delete" data-id="${script.scriptId}">🗑️ Delete</button>
+        <button class="btn btn-primary btn-sm" onclick="copyLoadstring('${script.name}')">⚡ Copy Loadstring</button>
+        <button class="btn btn-secondary btn-sm" onclick="copyRawLink('${script.name}')">📋 Copy Link</button>
+        <button class="btn btn-secondary btn-sm" onclick="editScript('${script.name}')">✏️ Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteScript('${script.name}')">🗑️ Delete</button>
       </div>
     </div>
   `;
@@ -310,109 +339,75 @@ function renderScriptList(scripts) {
 
 function filterScripts() {
   const query = document.getElementById('search-input').value.toLowerCase();
-  const filtered = cachedScripts.filter(s => s.filename.toLowerCase().includes(query));
+  const filtered = cachedScripts.filter(s => s.name.toLowerCase().includes(query));
   renderScriptList(filtered);
 }
 
 // actions
 
-function getLoaderUrl(publicId) {
-  return `${window.location.origin}/api/loader/${publicId}`;
+function getRawUrl(filename) {
+  return `${window.location.origin}/api/raw?file=${encodeURIComponent(filename)}`;
 }
 
-function getLoadstring(publicId) {
-  return `loadstring(game:HttpGet("${getLoaderUrl(publicId)}"))()`;
+function getLoadstring(rawUrl) {
+  return `loadstring(game:HttpGet("${rawUrl}"))()`;
 }
 
-function copyLoadstring(scriptId) {
-  const script = cachedScripts.find(s => s.scriptId === scriptId);
-  if (!script) return;
-  navigator.clipboard.writeText(getLoadstring(script.publicId));
+function copyRawLink(filename) {
+  const rawUrl = getRawUrl(filename);
+  navigator.clipboard.writeText(rawUrl);
+  showToast('Raw link copied!', 'success');
+}
+
+function copyLoadstring(filename) {
+  const rawUrl = getRawUrl(filename);
+  const code = getLoadstring(rawUrl);
+  navigator.clipboard.writeText(code);
   showToast('Loadstring copied! ⚡', 'success');
 }
 
-async function editScript(scriptId) {
-  try {
-    const res = await fetch(`/api/scripts/${scriptId}`, { headers: authHeaders() });
-    if (res.status === 401) {
-      handleLogout();
-      return;
-    }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) {
-      showToast(data.error || 'Could not load script', 'error');
-      return;
-    }
+async function editScript(filename) {
+  document.getElementById('script-filename').value = filename;
+  document.getElementById('editor-title').innerText = `Editing script (${filename})`;
 
-    editingId = scriptId;
-    document.getElementById('script-filename').value = data.script.filename;
-    document.getElementById('editor-title').innerText = `Editing script (${data.script.filename})`;
-    document.getElementById('upload-btn').innerText = 'Save changes';
-
+  if (localStore[filename]) {
     const textarea = document.getElementById('script-content');
-    textarea.value = data.script.content;
+    textarea.value = localStore[filename];
     textarea.dispatchEvent(new Event('input'));
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  } catch (e) {
-    showToast('Network error while loading the script', 'error');
+    return;
   }
+
+  try {
+    const res = await fetch(getRawUrl(filename));
+    if (res.ok) {
+      const text = await res.text();
+      localStore[filename] = text;
+      const textarea = document.getElementById('script-content');
+      textarea.value = text;
+      textarea.dispatchEvent(new Event('input'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  } catch (e) {}
 }
 
-async function toggleScript(scriptId) {
+async function deleteScript(filename) {
+  delete localStore[filename];
+
   try {
-    const res = await fetch(`/api/scripts/${scriptId}/toggle`, { method: 'POST', headers: authHeaders() });
+    const res = await fetch(`/api/delete?file=${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+      headers: authHeaders()
+    });
     if (res.status === 401) {
       handleLogout();
       return;
     }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) {
-      showToast(data.error || 'Could not update script', 'error');
-      return;
-    }
-    showToast(`Script ${data.script.enabled ? 'enabled' : 'disabled'}`, 'success');
-    loadScriptList();
-  } catch (e) {
-    showToast('Network error while updating the script', 'error');
-  }
-}
+  } catch (e) {}
 
-async function rotateScript(scriptId) {
-  try {
-    const res = await fetch(`/api/scripts/${scriptId}/rotate`, { method: 'POST', headers: authHeaders() });
-    if (res.status === 401) {
-      handleLogout();
-      return;
-    }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) {
-      showToast(data.error || 'Could not rotate link', 'error');
-      return;
-    }
-    showToast('Loadstring link rotated — old links stop working immediately', 'success');
-    loadScriptList();
-  } catch (e) {
-    showToast('Network error while rotating the link', 'error');
-  }
-}
-
-async function deleteScript(scriptId) {
-  try {
-    const res = await fetch(`/api/scripts/${scriptId}`, { method: 'DELETE', headers: authHeaders() });
-    if (res.status === 401) {
-      handleLogout();
-      return;
-    }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) {
-      showToast(data.error || 'Could not delete script', 'error');
-      return;
-    }
-    showToast('Script deleted', 'success');
-    loadScriptList();
-  } catch (e) {
-    showToast('Network error while deleting the script', 'error');
-  }
+  showToast(`Script "${filename}" deleted`, 'success');
+  loadScriptList();
+  loadStats();
 }
 
 function showToast(message, type = 'info') {

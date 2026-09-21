@@ -1,29 +1,9 @@
-// legacy raw file endpoint — kept alive so existing loadstrings (?file=Name.lua)
-// never need to change, but backed by the current script:/scriptcode: KV schema
-// instead of the old filename-keyed storage. Disabled scripts are 404, same as
-// the opaque /api/loader/<id> endpoint.
+// raw script server — returns plain text only, never HTML
 
-import { KEY, getJSON } from './_lib/kv.js';
-import { isRateLimited, tooManyRequests, clientIp } from './_lib/ratelimit.js';
-import { logEvent } from './_lib/log.js';
-
-const RAW_IP_LIMIT = 60;
-const RAW_IP_WINDOW = 60;
-
-function plainText(body, status) {
-  return new Response(body, {
-    status,
-    headers: {
-      'content-type': 'text/plain; charset=utf-8',
-      'access-control-allow-origin': '*',
-      'cache-control': 'no-cache, no-store, must-revalidate'
-    }
-  });
-}
-
-async function bumpCounter(kv, scriptId) {
+async function bumpCounter(kv, filename) {
   try {
-    for (const key of [KEY.count(scriptId), KEY.countTotal]) {
+    const keys = [`__count__:${filename}`, '__count__:__total__'];
+    for (const key of keys) {
       const current = parseInt((await kv.get(key)) || '0', 10) || 0;
       await kv.put(key, String(current + 1));
     }
@@ -32,58 +12,92 @@ async function bumpCounter(kv, scriptId) {
   }
 }
 
-async function findMetaByFilename(kv, filename) {
-  const list = await kv.list({ prefix: 'script:' });
-  let match = null;
-  for (const item of list.keys) {
-    const meta = await getJSON(kv, item.name);
-    if (!meta || meta.filename !== filename) continue;
-    if (!match || (meta.updatedAt || 0) > (match.updatedAt || 0)) {
-      match = meta;
+export async function onRequest(context) {
+  try {
+    const { request, env } = context;
+    const url = new URL(request.url);
+
+    const filename = url.searchParams.get('file') || url.searchParams.get('name');
+    if (!filename) {
+      return new Response('-- error: missing ?file= parameter', {
+        status: 400,
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'access-control-allow-origin': '*'
+        }
+      });
     }
+
+    const clean = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+    let code = null;
+
+    // 1. Try KV store first
+    if (env.SCRIPTS_KV) {
+      code = await env.SCRIPTS_KV.get(clean);
+    }
+
+    // 2. Try static assets as fallback (but guard against SPA HTML fallback)
+    if (!code) {
+      const paths = [`/scripts/${clean}`, `/${clean}`];
+      for (const path of paths) {
+        try {
+          const assetUrl = new URL(path, request.url);
+          const res = await env.ASSETS.fetch(assetUrl);
+          if (res.ok) {
+            const contentType = res.headers.get('content-type') || '';
+            // Cloudflare Pages returns index.html as SPA fallback — reject HTML responses
+            if (contentType.includes('text/html')) {
+              continue;
+            }
+            const text = await res.text();
+            // Double-check: if the response starts with <!DOCTYPE or <html, it's the SPA fallback
+            if (text.trimStart().startsWith('<!') || text.trimStart().startsWith('<html')) {
+              continue;
+            }
+            code = text;
+            break;
+          }
+        } catch (e) {
+          // asset fetch failed, continue to next path
+        }
+      }
+    }
+
+    if (!code) {
+      return new Response(`-- error 404: script '${clean}' not found`, {
+        status: 404,
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'access-control-allow-origin': '*'
+        }
+      });
+    }
+
+    // execution counter — every successful loadstring fetch counts as one run
+    if (env.SCRIPTS_KV) {
+      context.waitUntil(bumpCounter(env.SCRIPTS_KV, clean));
+    }
+
+    return new Response(code, {
+      status: 200,
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'access-control-allow-origin': '*',
+        'cache-control': 'no-cache, no-store, must-revalidate'
+      }
+    });
+
+  } catch (err) {
+    return new Response(`-- error: ${err.message}`, {
+      status: 500,
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'access-control-allow-origin': '*'
+      }
+    });
   }
-  return match;
 }
 
 export async function onRequestGet(context) {
-  const { request, env } = context;
-  const url = new URL(request.url);
-  const kv = env.SCRIPTS_KV;
-  const ip = clientIp(request);
-
-  try {
-    const filename = url.searchParams.get('file') || url.searchParams.get('name');
-    if (!filename) {
-      return plainText('-- error: missing ?file= parameter', 400);
-    }
-
-    if (!kv) {
-      return plainText('-- error: storage not configured', 500);
-    }
-
-    if (await isRateLimited(kv, `raw:ip:${ip}`, RAW_IP_LIMIT, RAW_IP_WINDOW)) {
-      await logEvent(kv, 'raw_rate_limited', { ip, filename });
-      return tooManyRequests();
-    }
-
-    const meta = await findMetaByFilename(kv, filename);
-    if (!meta || !meta.enabled) {
-      await logEvent(kv, 'raw_not_found', { ip, filename });
-      return plainText(`-- error 404: script '${filename}' not found`, 404);
-    }
-
-    const code = await kv.get(KEY.code(meta.scriptId));
-    if (!code) {
-      await logEvent(kv, 'raw_not_found', { ip, filename });
-      return plainText(`-- error 404: script '${filename}' not found`, 404);
-    }
-
-    context.waitUntil(bumpCounter(kv, meta.scriptId));
-    context.waitUntil(logEvent(kv, 'raw_served', { ip, filename }));
-
-    return plainText(code, 200);
-  } catch (err) {
-    console.error('[raw]', err);
-    return plainText(`-- error: ${err.message}`, 500);
-  }
+  return onRequest(context);
 }
