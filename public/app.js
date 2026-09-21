@@ -1,7 +1,6 @@
 const AUTH_KEY = 'cryptic_auth_token';
 const EMAIL_KEY = 'cryptic_auth_email';
 let cachedScripts = [];
-let cachedStats = { total: 0, counts: {} };
 let localStore = {};
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -110,7 +109,6 @@ function enterApp() {
   const navEmail = document.getElementById('nav-email');
   if (navEmail) navEmail.innerText = email || '';
   loadScriptList();
-  loadStats();
 }
 
 function showAuthModal(show) {
@@ -255,7 +253,6 @@ async function handleUpload(event) {
 
   clearEditor();
   loadScriptList();
-  loadStats();
 }
 
 // library
@@ -287,33 +284,10 @@ async function loadScriptList() {
   }
 }
 
-async function loadStats() {
-  try {
-    const res = await fetch('/api/stats', { headers: authHeaders() });
-    if (!res.ok) return;
-    const data = await res.json();
-    cachedStats = { total: data.total || 0, counts: data.counts || {} };
-
-    document.getElementById('stat-runs').innerText = cachedStats.total.toLocaleString('en-US');
-    document.getElementById('stat-scripts').innerText = cachedScripts.length || Object.keys(cachedStats.counts).length;
-
-    let topName = '–';
-    let topCount = -1;
-    for (const [name, count] of Object.entries(cachedStats.counts)) {
-      if (count > topCount) {
-        topCount = count;
-        topName = name;
-      }
-    }
-    document.getElementById('stat-top').innerText = topCount > 0 ? topName : '–';
-
-    renderScriptList(cachedScripts);
-  } catch (e) {}
-}
-
 function renderScriptList(scripts) {
   const container = document.getElementById('script-list-container');
-  document.getElementById('stat-scripts').innerText = scripts.length;
+  const statScripts = document.getElementById('stat-scripts');
+  if (statScripts) statScripts.innerText = scripts.length;
 
   if (scripts.length === 0) {
     container.innerHTML = '<div class="empty-state">No scripts yet. Create your first script above!</div>';
@@ -321,12 +295,10 @@ function renderScriptList(scripts) {
   }
 
   container.innerHTML = scripts.map((script, i) => {
-    const runs = cachedStats.counts[script.name] || 0;
     return `
     <div class="script-card fade-in" style="--delay:${(i * 0.04).toFixed(2)}s">
       <div class="script-card-header">
         <span class="script-card-title">${escapeHtml(script.name)}</span>
-        <span class="run-badge" title="Executions">⚡ ${runs.toLocaleString('en-US')}</span>
       </div>
       <div class="script-card-actions">
         <button class="btn btn-primary btn-sm" onclick="copyLoadstring('${script.name}')">⚡ Copy Loadstring</button>
@@ -409,7 +381,6 @@ async function deleteScript(filename) {
 
   showToast(`Script "${filename}" deleted`, 'success');
   loadScriptList();
-  loadStats();
 }
 
 function showToast(message, type = 'info') {

@@ -20,7 +20,6 @@ export async function onRequest(context) {
 
     if (env.SCRIPTS_KV) {
       await env.SCRIPTS_KV.delete(clean);
-      await env.SCRIPTS_KV.delete(`__count__:${clean}`);
     }
 
     return new Response(JSON.stringify({ success: true }), {
