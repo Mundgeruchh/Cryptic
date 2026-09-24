@@ -19,6 +19,15 @@ const randomSlug = () => {
 
 const sanitizeSlug = (name) => name.replace(/[^a-zA-Z0-9_\-.]/g, '_').slice(0, 120);
 
+let requestOrigin = '';
+
+async function purgeRaw(slug) {
+  if (!slug || !requestOrigin) return;
+  try {
+    await caches.default.delete(new Request(`${requestOrigin}/__raw_cache/${slug}`));
+  } catch (e) {}
+}
+
 async function loadTree(env) {
   const tree = await env.SCRIPTS_KV.get(TREE_KEY, 'json');
   return tree && tree.nodes ? tree : { nodes: {} };
@@ -61,7 +70,10 @@ async function importLegacyFiles(env, tree) {
     }
   } while (cursor);
 
-  if (changed) await saveTree(env, tree);
+  if (changed || !tree.synced) {
+    tree.synced = true;
+    await saveTree(env, tree);
+  }
 }
 
 function isDescendant(tree, nodeId, ancestorId) {
@@ -104,6 +116,7 @@ const writeLink = (env, node) => env.SCRIPTS_KV.put(LINK_PREFIX + node.link, lin
 
 async function applyLink(env, node, link) {
   if (node.link === link) return;
+  await purgeRaw(node.link);
   if (node.link) await env.SCRIPTS_KV.delete(LINK_PREFIX + node.link);
   node.link = link;
   await writeLink(env, node);
@@ -117,6 +130,7 @@ async function removeNode(env, tree, id) {
     for (const child of children) await removeNode(env, tree, child.id);
   } else {
     await env.SCRIPTS_KV.delete(FILE_PREFIX + id);
+    await purgeRaw(node.link);
     if (node.link) await env.SCRIPTS_KV.delete(LINK_PREFIX + node.link);
   }
   delete tree.nodes[id];
@@ -143,6 +157,7 @@ const actions = {
       const node = tree.nodes[id];
       if (!node || node.type !== 'file') return fail('File not found', 404);
       await env.SCRIPTS_KV.put(FILE_PREFIX + id, content);
+      await purgeRaw(node.link);
       node.size = size;
       node.binary = binary;
       node.updated = Date.now();
@@ -191,7 +206,10 @@ const actions = {
     if (nameTaken(tree, node.parent, name, id)) return fail(`"${name}" already exists in this folder`);
     node.name = name;
     node.updated = Date.now();
-    if (node.type === 'file' && node.notify && node.link) await writeLink(env, node);
+    if (node.type === 'file' && node.notify && node.link) {
+      await writeLink(env, node);
+      await purgeRaw(node.link);
+    }
     await saveTree(env, tree);
     return json({ success: true, node });
   },
@@ -220,7 +238,10 @@ const actions = {
     const node = tree.nodes[id];
     if (!node || node.type !== 'file') return fail('File not found', 404);
     node.notify = Boolean(notify);
-    if (node.link) await writeLink(env, node);
+    if (node.link) {
+      await writeLink(env, node);
+      await purgeRaw(node.link);
+    }
     await saveTree(env, tree);
     return json({ success: true, node });
   },
@@ -259,17 +280,15 @@ export async function onRequestGet({ request, env }) {
 
     const url = new URL(request.url);
     const id = url.searchParams.get('id');
-    const tree = await loadTree(env);
 
     if (id) {
-      const node = tree.nodes[id];
-      if (!node || node.type !== 'file') return fail('File not found', 404);
-      if (node.binary) return json({ success: true, node, content: '' });
       const content = await env.SCRIPTS_KV.get(FILE_PREFIX + id);
-      return json({ success: true, node, content: content ?? '' });
+      if (content === null) return fail('File not found', 404);
+      return json({ success: true, content });
     }
 
-    if (url.searchParams.get('sync') === '1') await importLegacyFiles(env, tree);
+    const tree = await loadTree(env);
+    if (url.searchParams.get('sync') === '1' && !tree.synced) await importLegacyFiles(env, tree);
     return json({ success: true, nodes: Object.values(tree.nodes) });
   } catch (err) {
     return fail(err.message, 500);
@@ -282,6 +301,7 @@ export async function onRequestPost({ request, env }) {
     if (!email) return unauthorized();
     if (!env.SCRIPTS_KV) return fail('KV namespace SCRIPTS_KV is not bound', 500);
 
+    requestOrigin = new URL(request.url).origin;
     const body = await request.json();
     const handler = actions[body.action];
     if (!handler) return fail('Unknown action');

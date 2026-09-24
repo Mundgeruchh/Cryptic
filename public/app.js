@@ -297,7 +297,6 @@ async function loadFileContent(id) {
   try {
     const data = await api(`/api/fs?id=${encodeURIComponent(id)}`);
     state.fileContent = data.content;
-    remember(data.node);
   } catch (err) {
     state.fileContent = '';
     showToast(err.message, 'error');
