@@ -1,6 +1,5 @@
 const AUTH_KEY = 'cryptic_auth_token';
 const EMAIL_KEY = 'cryptic_auth_email';
-const RANDOM_LINK_KEY = 'cryptic_random_links';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const PREVIEW_LINES = 20;
 const MAX_HIGHLIGHT_CHARS = 400000;
@@ -312,7 +311,6 @@ function render() {
 
 function renderTree() {
   const container = document.getElementById('tree');
-  const randomChecked = localStorage.getItem(RANDOM_LINK_KEY) === '1' ? 'checked' : '';
 
   const rows = [];
   const walk = (parentId, depth) => {
@@ -334,10 +332,7 @@ function renderTree() {
   walk(null, 0);
 
   container.innerHTML = `
-    ${rows.join('')}
-    <label class="tree-row check" style="margin-top:12px;cursor:pointer;color:var(--fg-muted)">
-      <input type="checkbox" id="random-link-toggle" ${randomChecked}> Random links for new files
-    </label>`;
+    ${rows.join('')}`;
 
   container.querySelectorAll('.tree-row[data-kind]').forEach(row => {
     row.addEventListener('click', (e) => {
@@ -353,10 +348,6 @@ function renderTree() {
     });
     row.addEventListener('contextmenu', (e) => openNodeMenu(e, state.byId[row.dataset.id]));
     attachDragHandlers(row);
-  });
-
-  document.getElementById('random-link-toggle').addEventListener('change', (e) => {
-    localStorage.setItem(RANDOM_LINK_KEY, e.target.checked ? '1' : '0');
   });
 }
 
@@ -526,8 +517,8 @@ function renderFileView(container, node) {
         </div>
         <h4 style="margin-top:16px">Link settings</h4>
         <div class="link-row">
-          <button class="btn btn-sm" id="lp-name">Use file name</button>
           <button class="btn btn-sm" id="lp-random">Generate random link</button>
+          <button class="btn btn-sm" id="lp-name">Remove random link &amp; restore original</button>
           <input type="text" id="lp-custom" placeholder="custom-link" value="${escapeHtml(node.link || '')}" style="max-width:260px;min-width:140px;flex:0 1 260px">
           <button class="btn btn-sm" id="lp-custom-save">Set custom link</button>
         </div>
@@ -551,7 +542,6 @@ function renderFileView(container, node) {
 function renderEditor(container, node) {
   const isNew = !node;
   const initial = isNew ? '' : state.fileContent;
-  const randomLinks = localStorage.getItem(RANDOM_LINK_KEY) === '1';
 
   container.innerHTML = `
     <div class="box">
@@ -602,7 +592,7 @@ function renderEditor(container, node) {
     state.newName = '';
     render();
   });
-  document.getElementById('ed-save').addEventListener('click', () => (isNew ? submitNewFile(text.value, randomLinks) : submitEdit(node, text.value)));
+  document.getElementById('ed-save').addEventListener('click', () => (isNew ? submitNewFile(text.value) : submitEdit(node, text.value)));
 }
 
 function startNewFile() {
@@ -611,7 +601,7 @@ function startNewFile() {
   render();
 }
 
-async function submitNewFile(content, randomLink) {
+async function submitNewFile(content) {
   const name = state.newName.trim();
   if (!name) {
     showToast('Name your file first', 'error');
@@ -619,7 +609,7 @@ async function submitNewFile(content, randomLink) {
     return;
   }
   try {
-    const data = await post({ action: 'save', parent: state.folderId, name, content, randomLink });
+    const data = await post({ action: 'save', parent: state.folderId, name, content });
     remember(data.node);
     state.newName = '';
     showToast(`Created ${name}`, 'success');
@@ -946,7 +936,6 @@ function handleFileInput(event) {
 
 async function uploadItems(items, rootFolderId) {
   if (!items.length) return;
-  const randomLink = localStorage.getItem(RANDOM_LINK_KEY) === '1';
   const folderCache = new Map();
   let saved = 0;
   let failed = 0;
@@ -979,7 +968,7 @@ async function uploadItems(items, rootFolderId) {
       const existing = childrenOf(parent).find(n => n.type === 'file' && n.name.toLowerCase() === file.name.toLowerCase());
       const body = existing
         ? { action: 'save', id: existing.id, content }
-        : { action: 'save', parent, name: file.name, content, randomLink };
+        : { action: 'save', parent, name: file.name, content };
       const data = await post(body);
       remember(data.node);
       saved++;
