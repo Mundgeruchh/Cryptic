@@ -154,6 +154,7 @@ function handleLogout() {
 async function enterApp() {
   showAuthView(false);
   document.getElementById('nav-email').textContent = localStorage.getItem(EMAIL_KEY) || '';
+  startUsagePolling();
   await loadTree(true);
   route();
 }
@@ -1017,4 +1018,50 @@ async function uploadItems(items, rootFolderId) {
 
   if (state.fileId) await loadFileContent(state.fileId);
   render();
+}
+
+const USAGE_LABELS = { read: 'Reads', write: 'Writes', delete: 'Deletes', list: 'Lists' };
+let usageTimer = null;
+
+async function loadUsage() {
+  const box = document.getElementById('usage');
+  if (!box) return;
+
+  let data;
+  try {
+    data = await api('/api/usage');
+  } catch (err) {
+    box.innerHTML = `<div class="usage-head">KV usage today</div><p class="usage-note">${escapeHtml(err.message)}</p>`;
+    return;
+  }
+
+  if (!data.usage) {
+    box.innerHTML = `<div class="usage-head">KV usage today</div><p class="usage-note">${escapeHtml(data.error || 'Not available')}</p>`;
+    return;
+  }
+
+  const rows = Object.keys(USAGE_LABELS).map(key => {
+    const used = data.usage[key];
+    const limit = data.limits[key];
+    const percent = Math.min(100, (used / limit) * 100);
+    const level = percent >= 90 ? 'danger' : percent >= 70 ? 'warn' : '';
+    return `
+      <div class="usage-row">
+        <div class="usage-label"><span>${USAGE_LABELS[key]}</span><span>${used.toLocaleString()} / ${limit.toLocaleString()}</span></div>
+        <div class="usage-bar"><div class="usage-fill ${level}" style="width:${percent}%"></div></div>
+      </div>`;
+  }).join('');
+
+  const resetTime = new Date(data.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  box.innerHTML = `
+    <div class="usage-head"><span>KV usage today</span><button class="btn btn-sm" id="usage-refresh" title="Refresh">↻</button></div>
+    ${rows}
+    <p class="usage-note">Resets at ${resetTime}. Cloudflare updates these numbers with a delay of a few minutes.</p>`;
+  document.getElementById('usage-refresh').addEventListener('click', loadUsage);
+}
+
+function startUsagePolling() {
+  loadUsage();
+  clearInterval(usageTimer);
+  usageTimer = setInterval(loadUsage, 120000);
 }

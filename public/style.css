@@ -474,3 +474,21 @@ input[type="text"]:focus, select:focus, textarea.field:focus {
   border-right: 1px solid var(--border-muted);
 }
 .ed-gutter div { padding: 0 12px; }
+
+.usage {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  font-size: 12px;
+}
+.usage-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: 600; }
+.usage-head button { padding: 0 6px; }
+.usage-row { margin-bottom: 8px; }
+.usage-label { display: flex; justify-content: space-between; color: var(--fg-muted); margin-bottom: 2px; }
+.usage-bar { height: 6px; border-radius: 3px; background: var(--border-muted); overflow: hidden; }
+.usage-fill { height: 100%; background: var(--green-hover); }
+.usage-fill.warn { background: var(--warn); }
+.usage-fill.danger { background: var(--danger); }
+.usage-note { margin: 4px 0 0; color: var(--fg-muted); }
