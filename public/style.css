@@ -447,3 +447,12 @@ input[type="text"]:focus, select:focus, textarea.field:focus {
   .file-row { grid-template-columns: minmax(0, 1fr) 32px; }
   .file-row .cell-muted { display: none; }
 }
+
+.preview-more {
+  padding: 8px 16px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-align: center;
+  background: var(--bg-subtle);
+  border-top: 1px solid var(--border);
+}

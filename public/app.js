@@ -2,6 +2,7 @@ const AUTH_KEY = 'cryptic_auth_token';
 const EMAIL_KEY = 'cryptic_auth_email';
 const RANDOM_LINK_KEY = 'cryptic_random_links';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const PREVIEW_LINES = 20;
 const MAX_HIGHLIGHT_CHARS = 400000;
 
 const ICONS = {
@@ -333,11 +334,6 @@ function renderTree() {
   walk(null, 0);
 
   container.innerHTML = `
-    <div class="tree-row${!state.folderId && !state.fileId ? ' active' : ''}" data-id="" data-kind="root" data-folder-drop="root">
-      <span class="tree-toggle">${ICONS.chevron.replace('CLS', 'open')}</span>
-      ${ICONS.folder}
-      <span class="tree-name">scripts</span>
-    </div>
     ${rows.join('')}
     <label class="tree-row check" style="margin-top:12px;cursor:pointer;color:var(--fg-muted)">
       <input type="checkbox" id="random-link-toggle" ${randomChecked}> Random links for new files
@@ -368,7 +364,7 @@ function renderBreadcrumbs() {
   const nav = document.getElementById('breadcrumbs');
   const target = state.fileId || state.folderId;
   const chain = target ? pathOf(target) : [];
-  const parts = [`<a data-crumb="">scripts</a>`];
+  const parts = [`<a data-crumb="">Cryptic</a>`];
 
   chain.forEach((node, i) => {
     const last = i === chain.length - 1;
@@ -461,7 +457,7 @@ function renderFolderView(container) {
   container.innerHTML = `
     <div class="box">
       <div class="box-header">
-        <strong>${escapeHtml(folder ? folder.name : 'scripts')}</strong>
+        <strong>${escapeHtml(folder ? folder.name : 'Cryptic')}</strong>
         <div class="meta"><span>${children.length} item${children.length === 1 ? '' : 's'}</span><span class="sep"></span><span>${total} file${total === 1 ? '' : 's'} total</span></div>
       </div>
       ${rows.join('')}${empty}
@@ -496,8 +492,13 @@ function renderFileView(container, node) {
 
   const content = state.fileContent;
   const lineCount = content.split('\n').length;
-  const highlighted = content.length > MAX_HIGHLIGHT_CHARS ? escapeHtml(content) : highlightLua(content);
-  const lines = Array.from({ length: lineCount }, (_, i) => `<div>${i + 1}</div>`).join('');
+  const shownCount = Math.min(lineCount, PREVIEW_LINES);
+  const preview = content.split('\n').slice(0, PREVIEW_LINES).join('\n');
+  const highlighted = preview.length > MAX_HIGHLIGHT_CHARS ? escapeHtml(preview) : highlightLua(preview);
+  const lines = Array.from({ length: shownCount }, (_, i) => `<div>${i + 1}</div>`).join('');
+  const hiddenNote = lineCount > shownCount
+    ? `<div class="preview-more">${lineCount - shownCount} more line${lineCount - shownCount === 1 ? '' : 's'} hidden. Click Edit to see the full file.</div>`
+    : '';
 
   container.innerHTML = `
     <div class="box">
@@ -512,6 +513,7 @@ function renderFileView(container, node) {
         </div>
       </div>
       <div class="code-view"><div class="code-lines">${lines}</div><pre class="code-body">${highlighted}</pre></div>
+      ${hiddenNote}
       <div class="link-panel">
         <h4>Loadstring link</h4>
         <div class="link-row">
