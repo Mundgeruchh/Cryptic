@@ -120,15 +120,27 @@ async function removeNode(env, tree, id) {
 
 const actions = {
   async save(env, tree, body) {
-    const { id, name, content } = body;
+    const { id, name } = body;
     const parent = body.parent || null;
-    if (typeof content !== 'string') return fail('Content is required');
+    const binary = typeof body.contentBase64 === 'string';
+    let content;
+    let size;
+    if (binary) {
+      content = Uint8Array.from(atob(body.contentBase64), c => c.charCodeAt(0));
+      size = content.length;
+    } else if (typeof body.content === 'string') {
+      content = body.content;
+      size = new TextEncoder().encode(content).length;
+    } else {
+      return fail('Content is required');
+    }
 
     if (id) {
       const node = tree.nodes[id];
       if (!node || node.type !== 'file') return fail('File not found', 404);
       await env.SCRIPTS_KV.put(FILE_PREFIX + id, content);
-      node.size = content.length;
+      node.size = size;
+      node.binary = binary;
       node.updated = Date.now();
       await saveTree(env, tree);
       return json({ success: true, node });
@@ -144,7 +156,8 @@ const actions = {
       name,
       parent,
       link: null,
-      size: content.length,
+      binary,
+      size,
       updated: Date.now()
     };
     tree.nodes[node.id] = node;
@@ -237,6 +250,7 @@ export async function onRequestGet({ request, env }) {
     if (id) {
       const node = tree.nodes[id];
       if (!node || node.type !== 'file') return fail('File not found', 404);
+      if (node.binary) return json({ success: true, node, content: '' });
       const content = await env.SCRIPTS_KV.get(FILE_PREFIX + id);
       return json({ success: true, node, content: content ?? '' });
     }

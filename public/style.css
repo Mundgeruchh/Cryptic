@@ -303,7 +303,7 @@ input[type="text"]:focus, select:focus, textarea.field:focus {
 }
 .editor pre, .editor textarea {
   position: absolute;
-  inset: 0;
+  inset: 0 0 0 56px;
   margin: 0;
   padding: 16px;
   border: 0;
@@ -456,3 +456,21 @@ input[type="text"]:focus, select:focus, textarea.field:focus {
   background: var(--bg-subtle);
   border-top: 1px solid var(--border);
 }
+
+.ed-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 56px;
+  padding: 16px 0 40px;
+  overflow: hidden;
+  text-align: right;
+  user-select: none;
+  color: var(--fg-muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 20px;
+  border-right: 1px solid var(--border-muted);
+}
+.ed-gutter div { padding: 0 12px; }

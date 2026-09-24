@@ -15,9 +15,9 @@ export async function onRequestGet({ request, env }) {
     if (slug.startsWith('__') || !env.SCRIPTS_KV) return plain(`-- error 404: script '${slug}' not found`, 404);
 
     const id = await env.SCRIPTS_KV.get('__l:' + slug);
-    let code = id ? await env.SCRIPTS_KV.get('__f:' + id) : null;
+    let code = id ? await env.SCRIPTS_KV.get('__f:' + id, 'arrayBuffer') : null;
 
-    if (code === null) code = await env.SCRIPTS_KV.get(slug);
+    if (code === null) code = await env.SCRIPTS_KV.get(slug, 'arrayBuffer');
 
     if (code === null) return plain(`-- error 404: script '${slug}' not found`, 404);
 

@@ -482,6 +482,7 @@ function renderFileView(container, node) {
     return;
   }
 
+  const isBinary = Boolean(node.binary);
   const content = state.fileContent;
   const lineCount = content.split('\n').length;
   const shownCount = Math.min(lineCount, PREVIEW_LINES);
@@ -507,7 +508,9 @@ function renderFileView(container, node) {
           <button class="btn btn-sm btn-danger" id="fv-delete">Delete</button>
         </div>
       </div>
-      <div class="code-view"><div class="code-lines">${lines}</div><pre class="code-body">${highlighted}</pre></div>
+      ${isBinary
+        ? '<div class="empty"><p>This file is not valid UTF-8 text, so no preview is shown. It is stored and served byte for byte, and the loadstring works as usual.</p></div>'
+        : `<div class="code-view"><div class="code-lines">${lines}</div><pre class="code-body">${highlighted}</pre></div>`}
       ${hiddenNote}
       <div class="link-panel">
         <h4>Loadstring link</h4>
@@ -532,6 +535,10 @@ function renderFileView(container, node) {
 
   document.getElementById('fv-loadstring').addEventListener('click', () => copyText(loadstringFor(node), 'Loadstring copied'));
   document.getElementById('fv-copy').addEventListener('click', () => copyText(state.fileContent, 'Code copied'));
+  if (isBinary) {
+    document.getElementById('fv-edit').disabled = true;
+    document.getElementById('fv-copy').disabled = true;
+  }
   document.getElementById('fv-edit').addEventListener('click', () => { state.mode = 'edit'; render(); });
   document.getElementById('fv-delete').addEventListener('click', () => deleteNode(node));
   document.getElementById('lp-copy-raw').addEventListener('click', () => copyText(rawUrl(node), 'Link copied'));
@@ -554,6 +561,7 @@ function renderEditor(container, node) {
         <div class="meta"><span id="ed-lines">1 line</span></div>
       </div>
       <div class="editor">
+        <div id="ed-gutter" class="ed-gutter" aria-hidden="true"></div>
         <pre id="ed-highlight" aria-hidden="true"></pre>
         <textarea id="ed-text" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="-- Write or paste your Lua code here"></textarea>
       </div>
@@ -566,6 +574,8 @@ function renderEditor(container, node) {
   const text = document.getElementById('ed-text');
   const pre = document.getElementById('ed-highlight');
   const lineLabel = document.getElementById('ed-lines');
+  const gutter = document.getElementById('ed-gutter');
+  let renderedLines = 0;
   text.value = initial;
 
   const refresh = () => {
@@ -573,8 +583,13 @@ function renderEditor(container, node) {
     pre.innerHTML = (value.length > MAX_HIGHLIGHT_CHARS ? escapeHtml(value) : highlightLua(value)) + '\n';
     const count = value.split('\n').length;
     lineLabel.textContent = `${count} line${count === 1 ? '' : 's'}`;
+    if (count !== renderedLines) {
+      renderedLines = count;
+      gutter.innerHTML = Array.from({ length: count }, (_, i) => `<div>${i + 1}</div>`).join('');
+    }
   };
   const syncScroll = () => {
+    gutter.scrollTop = text.scrollTop;
     pre.scrollTop = text.scrollTop;
     pre.scrollLeft = text.scrollLeft;
   };
@@ -938,6 +953,20 @@ function handleFileInput(event) {
   uploadItems(files.map(file => ({ segments: [], file })), state.folderId);
 }
 
+async function readUpload(file) {
+  const buffer = await file.arrayBuffer();
+  try {
+    return { content: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer) };
+  } catch (e) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return { contentBase64: btoa(binary) };
+  }
+}
+
 async function uploadItems(items, rootFolderId) {
   if (!items.length) return;
   const folderCache = new Map();
@@ -967,12 +996,12 @@ async function uploadItems(items, rootFolderId) {
   for (const { segments, file } of items) {
     try {
       if (file.size > MAX_UPLOAD_BYTES) throw new Error(`${file.name} is larger than 10 MB`);
-      const content = await file.text();
+      const payload = await readUpload(file);
       const parent = await ensureFolder(segments);
       const existing = childrenOf(parent).find(n => n.type === 'file' && n.name.toLowerCase() === file.name.toLowerCase());
       const body = existing
-        ? { action: 'save', id: existing.id, content }
-        : { action: 'save', parent, name: file.name, content };
+        ? { action: 'save', id: existing.id, ...payload }
+        : { action: 'save', parent, name: file.name, ...payload };
       const data = await post(body);
       remember(data.node);
       saved++;
