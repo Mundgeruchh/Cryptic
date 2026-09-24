@@ -530,7 +530,8 @@ function renderFileView(container, node) {
           <input type="text" id="lp-custom" placeholder="custom-link" value="${escapeHtml(node.link || '')}" style="max-width:260px;min-width:140px;flex:0 1 260px">
           <button class="btn btn-sm" id="lp-custom-save">Set custom link</button>
         </div>
-        <p class="link-hint">Changing the link invalidates the old one immediately. Allowed characters: letters, numbers, _ - .</p>
+        <label class="check" style="font-weight:400"><input type="checkbox" id="lp-notify" ${node.notify ? 'checked' : ''}> Send a Discord message whenever this script is loaded</label>
+        <p class="link-hint">Needs the secret DISCORD_WEBHOOK_URL in Cloudflare. Changing the link invalidates the old one immediately. Allowed characters: letters, numbers, _ - .</p>
       </div>
     </div>`;
 
@@ -546,6 +547,16 @@ function renderFileView(container, node) {
   document.getElementById('lp-copy-load').addEventListener('click', () => copyText(loadstringFor(node), 'Loadstring copied'));
   document.getElementById('lp-name').addEventListener('click', () => changeLink(node, { mode: 'name' }));
   document.getElementById('lp-random').addEventListener('click', () => changeLink(node, { mode: 'random' }));
+  document.getElementById('lp-notify').addEventListener('change', async (e) => {
+    try {
+      const data = await post({ action: 'setnotify', id: node.id, notify: e.target.checked });
+      remember(data.node);
+      showToast(e.target.checked ? 'Notifications enabled' : 'Notifications disabled', 'success');
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      showToast(err.message, 'error');
+    }
+  });
   document.getElementById('lp-custom-save').addEventListener('click', () => {
     changeLink(node, { mode: 'custom', link: document.getElementById('lp-custom').value.trim() });
   });

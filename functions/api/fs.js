@@ -98,11 +98,15 @@ function pickLink(tree, name, exceptId) {
   return randomSlug();
 }
 
+const linkValue = (node) => (node.notify ? JSON.stringify({ id: node.id, name: node.name }) : node.id);
+
+const writeLink = (env, node) => env.SCRIPTS_KV.put(LINK_PREFIX + node.link, linkValue(node));
+
 async function applyLink(env, node, link) {
   if (node.link === link) return;
   if (node.link) await env.SCRIPTS_KV.delete(LINK_PREFIX + node.link);
   node.link = link;
-  await env.SCRIPTS_KV.put(LINK_PREFIX + link, node.id);
+  await writeLink(env, node);
 }
 
 async function removeNode(env, tree, id) {
@@ -187,6 +191,7 @@ const actions = {
     if (nameTaken(tree, node.parent, name, id)) return fail(`"${name}" already exists in this folder`);
     node.name = name;
     node.updated = Date.now();
+    if (node.type === 'file' && node.notify && node.link) await writeLink(env, node);
     await saveTree(env, tree);
     return json({ success: true, node });
   },
@@ -209,6 +214,15 @@ const actions = {
     await removeNode(env, tree, id);
     await saveTree(env, tree);
     return json({ success: true });
+  },
+
+  async setnotify(env, tree, { id, notify }) {
+    const node = tree.nodes[id];
+    if (!node || node.type !== 'file') return fail('File not found', 404);
+    node.notify = Boolean(notify);
+    if (node.link) await writeLink(env, node);
+    await saveTree(env, tree);
+    return json({ success: true, node });
   },
 
   async setlink(env, tree, { id, mode, link }) {
