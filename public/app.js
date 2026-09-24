@@ -2,7 +2,8 @@ const AUTH_KEY = 'cryptic_auth_token';
 const EMAIL_KEY = 'cryptic_auth_email';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const PREVIEW_LINES = 20;
-const MAX_HIGHLIGHT_CHARS = 400000;
+const MAX_HIGHLIGHT_CHARS = 100000;
+const MAX_LINE_CHARS = 400;
 
 const ICONS = {
   folder: '<svg class="icon-folder" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z"/></svg>',
@@ -484,11 +485,14 @@ function renderFileView(container, node) {
   const content = state.fileContent;
   const lineCount = content.split('\n').length;
   const shownCount = Math.min(lineCount, PREVIEW_LINES);
-  const preview = content.split('\n').slice(0, PREVIEW_LINES).join('\n');
-  const highlighted = preview.length > MAX_HIGHLIGHT_CHARS ? escapeHtml(preview) : highlightLua(preview);
+  const previewLines = content.split('\n').slice(0, PREVIEW_LINES);
+  const clipped = previewLines.some(line => line.length > MAX_LINE_CHARS);
+  const preview = previewLines.map(line => (line.length > MAX_LINE_CHARS ? line.slice(0, MAX_LINE_CHARS) + ' ...' : line)).join('\n');
+  const highlighted = highlightLua(preview);
   const lines = Array.from({ length: shownCount }, (_, i) => `<div>${i + 1}</div>`).join('');
-  const hiddenNote = lineCount > shownCount
-    ? `<div class="preview-more">${lineCount - shownCount} more line${lineCount - shownCount === 1 ? '' : 's'} hidden. Click Edit to see the full file.</div>`
+  const hiddenLines = lineCount - shownCount;
+  const hiddenNote = hiddenLines > 0 || clipped
+    ? `<div class="preview-more">${hiddenLines > 0 ? `${hiddenLines} more line${hiddenLines === 1 ? '' : 's'} hidden. ` : ''}${clipped ? 'Very long lines were shortened. ' : ''}Click Edit to see the full file.</div>`
     : '';
 
   container.innerHTML = `
