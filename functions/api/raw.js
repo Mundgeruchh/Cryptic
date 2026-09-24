@@ -1,86 +1,31 @@
-// raw script server — returns plain text only, never HTML
+const textHeaders = {
+  'content-type': 'text/plain; charset=utf-8',
+  'access-control-allow-origin': '*'
+};
 
-export async function onRequest(context) {
+const plain = (body, status) => new Response(body, { status, headers: textHeaders });
+
+export async function onRequestGet({ request, env }) {
   try {
-    const { request, env } = context;
     const url = new URL(request.url);
+    const requested = url.searchParams.get('file') || url.searchParams.get('name');
+    if (!requested) return plain('-- error: missing ?file= parameter', 400);
 
-    const filename = url.searchParams.get('file') || url.searchParams.get('name');
-    if (!filename) {
-      return new Response('-- error: missing ?file= parameter', {
-        status: 400,
-        headers: {
-          'content-type': 'text/plain; charset=utf-8',
-          'access-control-allow-origin': '*'
-        }
-      });
-    }
+    const slug = requested.replace(/[^a-zA-Z0-9_\-.]/g, '_');
+    if (slug.startsWith('__') || !env.SCRIPTS_KV) return plain(`-- error 404: script '${slug}' not found`, 404);
 
-    const clean = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-    let code = null;
+    const id = await env.SCRIPTS_KV.get('__l:' + slug);
+    let code = id ? await env.SCRIPTS_KV.get('__f:' + id) : null;
 
-    // 1. Try KV store first
-    if (env.SCRIPTS_KV) {
-      code = await env.SCRIPTS_KV.get(clean);
-    }
+    if (code === null) code = await env.SCRIPTS_KV.get(slug);
 
-    // 2. Try static assets as fallback (but guard against SPA HTML fallback)
-    if (!code) {
-      const paths = [`/scripts/${clean}`, `/${clean}`];
-      for (const path of paths) {
-        try {
-          const assetUrl = new URL(path, request.url);
-          const res = await env.ASSETS.fetch(assetUrl);
-          if (res.ok) {
-            const contentType = res.headers.get('content-type') || '';
-            // Cloudflare Pages returns index.html as SPA fallback — reject HTML responses
-            if (contentType.includes('text/html')) {
-              continue;
-            }
-            const text = await res.text();
-            // Double-check: if the response starts with <!DOCTYPE or <html, it's the SPA fallback
-            if (text.trimStart().startsWith('<!') || text.trimStart().startsWith('<html')) {
-              continue;
-            }
-            code = text;
-            break;
-          }
-        } catch (e) {
-          // asset fetch failed, continue to next path
-        }
-      }
-    }
-
-    if (!code) {
-      return new Response(`-- error 404: script '${clean}' not found`, {
-        status: 404,
-        headers: {
-          'content-type': 'text/plain; charset=utf-8',
-          'access-control-allow-origin': '*'
-        }
-      });
-    }
+    if (code === null) return plain(`-- error 404: script '${slug}' not found`, 404);
 
     return new Response(code, {
       status: 200,
-      headers: {
-        'content-type': 'text/plain; charset=utf-8',
-        'access-control-allow-origin': '*',
-        'cache-control': 'no-cache, no-store, must-revalidate'
-      }
+      headers: { ...textHeaders, 'cache-control': 'no-cache, no-store, must-revalidate' }
     });
-
   } catch (err) {
-    return new Response(`-- error: ${err.message}`, {
-      status: 500,
-      headers: {
-        'content-type': 'text/plain; charset=utf-8',
-        'access-control-allow-origin': '*'
-      }
-    });
+    return plain(`-- error: ${err.message}`, 500);
   }
-}
-
-export async function onRequestGet(context) {
-  return onRequest(context);
 }
